@@ -1,27 +1,44 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
+#include <LinkedList.h>
 
-const char *ssid = "QLVD_NET";
-const char *password = "qu@l1v1d@";
+const char *ssid = "CLARO_648DFE-IOT";
+const char *password = "TGtgnCCaGm";
 
-IPAddress ip(10, 10, 3, 158); // Endereço IP desejado
-IPAddress gateway(10, 10, 1, 1);
-IPAddress subnet(255, 255, 0, 0);
+IPAddress ip(192, 168, 1, 158);
+IPAddress gateway(192, 168, 1, 1);
+IPAddress subnet(255, 255, 255, 0);
 
-WiFiServer server(80);          // Cria o objeto WiFiServer
-const int ledPin = LED_BUILTIN; // Pino do LED embutido (D4 no ESP8266)
+WiFiServer server(80);
+const int ledPin = LED_BUILTIN;
+const int rele = 2;
+
+void blinkLed(int n, int s, int led)
+{
+  for (int i = 0; i < n; i++)
+  {
+    digitalWrite(led, LOW);
+    delay(s);
+    digitalWrite(led, HIGH);
+    delay(s);
+  }
+}
+void resetArray(char *array, int size)
+{
+  for (int i = 0; i < size; i++)
+  {
+    array[i] = '\0';
+  }
+}
 
 void setup()
 {
-  // Inicializa a comunicação serial
   Serial.begin(115200);
   Serial.setDebugOutput(true);
-  Serial.println("Serial funcionando no PlatformIO!");
 
-  // Configura o pino do LED como saída
   pinMode(ledPin, OUTPUT);
+  pinMode(rele, OUTPUT);
 
-  // Conecta-se à rede Wi-Fi
   WiFi.config(ip, gateway, subnet);
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED)
@@ -29,42 +46,54 @@ void setup()
     delay(1000);
   }
 
-  // Inicia o servidor TCP
   server.begin();
 
-  // Exibe mensagem no terminal serial
   Serial.println("Servidor iniciado!");
-  digitalWrite(LED_BUILTIN, HIGH);
-  delay(500);
-  digitalWrite(LED_BUILTIN, LOW);
-  delay(500);
-  digitalWrite(LED_BUILTIN, HIGH);
-
-  // Pisca o LED continuamente
+  blinkLed(4, 500, ledPin);
 }
 
 void loop()
 {
-  WiFiClient client = server.available(); // Verifica se há conexões de entrada
+  WiFiClient client = server.available();
+  String dataformat = "";
   if (client)
   {
     // Cliente conectado
     digitalWrite(LED_BUILTIN, LOW);
+    digitalWrite(rele, HIGH);
     Serial.println("Cliente conectado");
     while (client.connected())
     {
-      if (client.available())
+      char recived[350];
+      int positions = 0;
+      while (client.available() > 0)
       {
         // Dados recebidos do cliente
-        char data = client.read();
-        String dataformat = String(data);
-        Serial.println(dataformat);
-        // Faça algo com os dados recebidos
+        recived[positions] = client.read();
+        if (0xFF == recived[positions])
+        {
+          break;
+        }
+        positions++;
+      }
+
+      if (recived[0] != '\0')
+      {
+        for (int i = 0; i < sizeof(recived); i++)
+        {
+          if (recived[i])
+          {
+            Serial.print(recived[i], HEX);
+          }
+        }
+        Serial.println();
+        resetArray(recived, sizeof(recived));
       }
     }
     // Cliente desconectado
     client.stop();
     Serial.println("Cliente desconectado");
     digitalWrite(LED_BUILTIN, HIGH);
+    digitalWrite(rele, LOW);
   }
 }
