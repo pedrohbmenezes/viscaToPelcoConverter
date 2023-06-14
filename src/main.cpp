@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <LinkedList.h>
+#include <command.h>
 
 const char *ssid = "CLARO_648DFE-IOT";
 const char *password = "TGtgnCCaGm";
@@ -55,12 +56,10 @@ void setup()
 void loop()
 {
   WiFiClient client = server.available();
-  String dataformat = "";
   if (client)
   {
     // Cliente conectado
-    digitalWrite(LED_BUILTIN, LOW);
-    digitalWrite(rele, HIGH);
+    digitalWrite(LED_BUILTIN, HIGH);
     Serial.println("Cliente conectado");
     while (client.connected())
     {
@@ -79,21 +78,15 @@ void loop()
 
       if (recived[0] != '\0')
       {
-        for (int i = 0; i < sizeof(recived); i++)
-        {
-          if (recived[i])
-          {
-            Serial.print(recived[i], HEX);
-          }
-        }
-        Serial.println();
+        CommandVisca commandVisca;
+        const String commandName = commandVisca.getCommandName(recived);
+        Serial.println(commandName);
         resetArray(recived, sizeof(recived));
       }
     }
     // Cliente desconectado
     client.stop();
     Serial.println("Cliente desconectado");
-    digitalWrite(LED_BUILTIN, HIGH);
-    digitalWrite(rele, LOW);
+    digitalWrite(LED_BUILTIN, LOW);
   }
 }
