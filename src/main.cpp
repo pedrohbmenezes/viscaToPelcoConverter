@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
-#include <LinkedList.h>
 #include <command.h>
+#include <Wire.h>
 
 const char *ssid = "CLARO_648DFE-IOT";
 const char *password = "TGtgnCCaGm";
@@ -36,7 +36,7 @@ void setup()
 {
   Serial.begin(115200);
   Serial.setDebugOutput(true);
-
+  Wire.begin(D1, D2);
   pinMode(ledPin, OUTPUT);
   pinMode(rele, OUTPUT);
 
@@ -81,6 +81,9 @@ void loop()
         CommandVisca commandVisca;
         const String commandName = commandVisca.getCommandName(recived);
         Serial.println(commandName);
+        Wire.beginTransmission(8);
+        Wire.write(commandName.c_str());
+        Wire.endTransmission();
         resetArray(recived, sizeof(recived));
       }
     }

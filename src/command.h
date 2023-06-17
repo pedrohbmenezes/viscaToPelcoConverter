@@ -3,7 +3,16 @@
 
 class CommandVisca
 {
+private:
+    int maxPresentNumber = 6;
+
 public:
+    bool isCallPresent(char *command, int presentNumber)
+    {
+        char memoryPosition = presentNumber - 1; // Ajusta o número de chamada presente para a posição de memória correspondente
+        return (checkByte(command, 0, 0x81) && checkByte(command, 1, 0x01) && checkByte(command, 2, 0x04) && checkByte(command, 3, 0x3F) && checkByte(command, 4, 0x02) && checkByte(command, 5, memoryPosition) && checkByte(command, 6, 0xFF));
+    }
+
     bool isComandHorizontal(char *comand)
     {
         return (checkByte(comand, 0, 0x81) && checkByte(comand, 1, 0x01) && checkByte(comand, 2, 0x06) && checkByte(comand, 3, 0x01));
@@ -56,21 +65,28 @@ public:
     }
     String getCommandName(char *comand)
     {
+        for (int presentNumber = 1; presentNumber <= maxPresentNumber; presentNumber++)
+        {
+            if (isCallPresent(comand, presentNumber))
+            {
+                return "Call Present " + String(presentNumber);
+            }
+        }
         if (isCommandCima(comand))
         {
-            return "Cima";
+            return "4";
         }
         else if (isCommandBaixo(comand))
         {
-            return "Baixo";
+            return "5";
         }
         else if (isCommandEsquerda(comand))
         {
-            return "Esquerda";
+            return "3";
         }
         else if (isCommandDireita(comand))
         {
-            return "Direita";
+            return "1";
         }
         else if (init(comand))
         {
@@ -78,19 +94,19 @@ public:
         }
         else if (zoomIn(comand))
         {
-            return "Zoom In";
+            return "6";
         }
         else if (zoomOut(comand))
         {
-            return "Zoom Out";
+            return "7";
         }
         else if (directionalStop(comand))
         {
-            return "Parar";
+            return "2";
         }
         else if (zoomStop(comand))
         {
-            return "Parar Zoom";
+            return "2";
         }
         else
         {
