@@ -1,6 +1,8 @@
 #ifndef COMMANDVISCA_H
 #define COMMANDVISCA_H
 
+#include <Arduino.h>
+
 class CommandVisca
 {
 private:
@@ -9,7 +11,7 @@ private:
 public:
     bool isCallPresent(char *command, int presentNumber)
     {
-        char memoryPosition = presentNumber - 1; // Ajusta o número de chamada presente para a posição de memória correspondente
+        char memoryPosition = presentNumber; // Ajusta o número de chamada presente para a posição de memória correspondente
         return (checkByte(command, 0, 0x81) && checkByte(command, 1, 0x01) && checkByte(command, 2, 0x04) && checkByte(command, 3, 0x3F) && checkByte(command, 4, 0x02) && checkByte(command, 5, memoryPosition) && checkByte(command, 6, 0xFF));
     }
 
@@ -63,55 +65,73 @@ public:
     {
         return (checkByte(comand, 0, 0x81) && checkByte(comand, 1, 0x01) && checkByte(comand, 2, 0x06) && checkByte(comand, 3, 0x01) && checkByte(comand, 4, 0x00) && checkByte(comand, 5, 0x00) && checkByte(comand, 6, 0x03) && checkByte(comand, 7, 0x03));
     }
-    String getCommandName(char *comand)
+
+    uint8_t *getCommandBytes(char *command)
     {
-        for (int presentNumber = 1; presentNumber <= maxPresentNumber; presentNumber++)
+        uint8_t *commandBytes = new uint8_t[3];
+
+        if (isCallPresent(command, command[5]))
         {
-            if (isCallPresent(comand, presentNumber))
-            {
-                return "Call Present " + String(presentNumber);
-            }
+            commandBytes[0] = 0xFF;
+            commandBytes[1] = 0x03;
+            commandBytes[2] = command[5] + 1;
         }
-        if (isCommandCima(comand))
+        else if (isCommandCima(command))
         {
-            return "4";
+            commandBytes[0] = 0xFF;
+            commandBytes[1] = 0x02;
+            commandBytes[2] = 0x04;
         }
-        else if (isCommandBaixo(comand))
+        else if (isCommandBaixo(command))
         {
-            return "5";
+            commandBytes[0] = 0xFF;
+            commandBytes[1] = 0x02;
+            commandBytes[2] = 0x05;
         }
-        else if (isCommandEsquerda(comand))
+        else if (isCommandEsquerda(command))
         {
-            return "3";
+            commandBytes[0] = 0xFF;
+            commandBytes[1] = 0x02;
+            commandBytes[2] = 0x03;
         }
-        else if (isCommandDireita(comand))
+        else if (isCommandDireita(command))
         {
-            return "1";
+            commandBytes[0] = 0xFF;
+            commandBytes[1] = 0x02;
+            commandBytes[2] = 0x01;
         }
-        else if (init(comand))
+        else if (init(command))
         {
-            return "Inicializacao";
+            commandBytes[0] = 0xFF;
+            commandBytes[1] = 0x02;
+            commandBytes[2] = 0x01;
         }
-        else if (zoomIn(comand))
+        else if (zoomIn(command))
         {
-            return "6";
+            commandBytes[0] = 0xFF;
+            commandBytes[1] = 0x02;
+            commandBytes[2] = 0x06;
         }
-        else if (zoomOut(comand))
+        else if (zoomOut(command))
         {
-            return "7";
+            commandBytes[0] = 0xFF;
+            commandBytes[1] = 0x02;
+            commandBytes[2] = 0x07;
         }
-        else if (directionalStop(comand))
+        else if (directionalStop(command) || zoomStop(command))
         {
-            return "2";
-        }
-        else if (zoomStop(comand))
-        {
-            return "2";
+            commandBytes[0] = 0xFF;
+            commandBytes[1] = 0x02;
+            commandBytes[2] = 0x02;
         }
         else
         {
-            return "Desconhecido";
+            commandBytes[0] = 0xFF;
+            commandBytes[1] = 0x00;
+            commandBytes[2] = 0x00;
         }
+
+        return commandBytes;
     }
 };
 #endif
