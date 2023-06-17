@@ -1,43 +1,29 @@
+#include <Wire.h>
+#include <Arduino.h>
 #include <SoftwareSerial.h>
-
 #define RS485Transmit HIGH
 #define RS485Receive LOW
-const byte rxPin = 3;
-const byte txPin = 4;
+
 const byte rePin = 5;
+const byte LEDi = 13;
 
-const int LED = 13;
+const byte address = 1; // Endereço da câmera
+byte speed = 100;       // Pode ser alterada pressionando esquerda+cima ou esquerda+baixo
 
-const int P_LEFT = 12;    // esquerda
-const int P_UP = 11;      // cima
-const int P_RIGHT = 10;   // direita
-const int P_DOWN = 9;     // baixo
-const int P_ZOOM_IN = 7;  // zoom in
-const int P_ZOOM_OUT = 8; // zoom out
-
-// Camera Configuration
-const byte address = 1; // endereço da câmera
-byte speed = 100;       // pode ser alterada pressionando esquerda+cima ou esquerda+baixo
 const byte C_STOP = 0x00;
 const byte C_UP = 0x08;
 const byte C_DOWN = 0x10;
 const byte C_LEFT = 0x04;
 const byte C_RIGHT = 0x02;
-
 const byte C_ZOOMIN = 0x20;
 const byte C_ZOOMOUT = 0x40;
-
-const byte C_SET_PAN_POSITION = 0x4B;  // posição pan em 1/100 graus
-const byte C_SET_TILT_POSITION = 0x4D; // posição tilt em 1/100 graus
-
-SoftwareSerial SerialRS = SoftwareSerial(rxPin, txPin);
+const byte C_SET_PRESET = 0x03;
+const byte C_CLEAR_PRESET = 0x05;
+const byte C_CALL_PRESET = 0x07;
 
 bool stopped = false;
 
-bool check(int pin)
-{
-    return (digitalRead(pin) == HIGH);
-}
+SoftwareSerial SerialRS(3, 4); // Pinos RX e TX para a comunicação RS485
 
 void sendPelcoDFrame(byte command, byte data1, byte data2)
 {
@@ -48,78 +34,156 @@ void sendPelcoDFrame(byte command, byte data1, byte data2)
     for (int i = 0; i < 7; i++)
     {
         SerialRS.write(bytes[i]);
-        // Serial.print(bytes[i], HEX); //debug
     }
-    // Serial.println(); //debug
 }
 
 void blinkLED()
 {
     for (int i = 0; i < 4; i++)
     {
-        digitalWrite(LED, HIGH);
+        digitalWrite(LEDi, HIGH);
         delay(100);
-        digitalWrite(LED, LOW);
+        digitalWrite(LEDi, LOW);
         delay(100);
     }
+}
+
+void stopCamera()
+{
+    sendPelcoDFrame(C_STOP, 0x00, 0x00);
+    Serial.println("Pare");
+}
+
+void moveCamera(byte command, const char *message)
+{
+    sendPelcoDFrame(command, speed, speed);
+    Serial.println(message);
+}
+
+void setPreset(byte presetID)
+{
+    byte data1 = 0x00;
+    byte data2 = presetID;
+    sendPelcoDFrame(C_SET_PRESET, data1, data2);
+    Serial.println("Set Preset");
+    delay(500);
+    stopCamera();
+}
+
+void clearPreset(byte presetID)
+{
+    byte data1 = 0x00;
+    byte data2 = presetID;
+    sendPelcoDFrame(C_CLEAR_PRESET, data1, data2);
+    Serial.println("Clear Preset");
+    delay(500);
+    stopCamera();
+}
+
+void callPreset(byte presetID)
+{
+    byte data1 = 0x00;
+    byte data2 = presetID;
+    sendPelcoDFrame(C_CALL_PRESET, data1, data2);
+    Serial.println("Call Preset");
+    delay(500);
+    stopCamera();
+}
+
+void handleDirectionalZoomCommand(uint8_t command)
+{
+    switch (command)
+    {
+    case 0x01: // Direita
+        moveCamera(C_RIGHT, "Direita");
+        break;
+    case 0x02: // Pare
+        stopCamera();
+        break;
+    case 0x03: // Esquerda
+        moveCamera(C_LEFT, "Esquerda");
+        break;
+    case 0x04: // Cima
+        moveCamera(C_UP, "Cima");
+        break;
+    case 0x05: // Baixo
+        moveCamera(C_DOWN, "Baixo");
+        break;
+    case 0x06: // Zoom In
+        moveCamera(C_ZOOMIN, "Zoom In");
+        break;
+    case 0x07: // Zoom Out
+        moveCamera(C_ZOOMOUT, "Zoom Out");
+        break;
+    default:
+        // Comando inválido
+        Serial.println("Comando direcional/zoom inválido!");
+        break;
+    }
+}
+
+void receiveEvent(int byteCount)
+{
+    Serial.println("Recebeu comando");
+
+    while (Wire.available())
+    {
+        uint8_t command[3];
+        for (int i = 0; i < 3; i++)
+        {
+            command[i] = Wire.read();
+        }
+
+        Serial.print("Comando recebido: ");
+        for (int i = 0; i < 3; i++)
+        {
+            Serial.print("0x");
+            Serial.print(command[i], HEX);
+            Serial.print(" ");
+        }
+        Serial.println();
+
+        if (command[0] != 0xFF)
+        {
+            Serial.println("Comando inválido!");
+            continue;
+        }
+
+        switch (command[1])
+        {
+        case 0x02: // Comandos direcionais e de zoom
+            handleDirectionalZoomCommand(command[2]);
+            break;
+        case 0x03:                  // Call Preset
+            callPreset(command[2]); // Exemplo de Preset ID = command[1]
+            break;
+        default:
+            break;
+        }
+    }
+}
+
+void startRS485()
+{
+    pinMode(rePin, OUTPUT);
+    digitalWrite(rePin, RS485Transmit);
+    SerialRS.begin(9600);
 }
 
 void setup()
 {
-    pinMode(LED, OUTPUT);
+    pinMode(LEDi, OUTPUT);
+    startRS485();
 
     Serial.begin(115200);
-    SerialRS.begin(9600);
-    delay(5000);
-    Serial.println("Controlador Pelco D");
-    digitalWrite(rePin, RS485Transmit);
-    sendPelcoDFrame(C_STOP, 0, 0);
-    delay(10);
-    sendPelcoDFrame(C_SET_PAN_POSITION, speed, speed);
+    Wire.begin(8); // Inicia a comunicação I2C com o endereço da câmera
+    Wire.onReceive(receiveEvent);
 
+    delay(1000);
     Serial.println("Controlador Pelco D");
-    blinkLED();
 }
 
 void loop()
 {
-    if (Serial.available())
-    {
-        int command = Serial.read();
-        switch (command)
-        {
-        case '1': // direita
-            sendPelcoDFrame(C_RIGHT, speed, speed);
-            Serial.println("Direita");
-            break;
-        case '2': // pare
-            sendPelcoDFrame(C_STOP, speed, speed);
-            Serial.println("Pare");
-            break;
-        case '3': // esquerda
-            sendPelcoDFrame(C_LEFT, speed, speed);
-            Serial.println("Esquerda");
-            break;
-        case '4': // cima
-            sendPelcoDFrame(C_UP, speed, speed);
-            Serial.println("Cima");
-            break;
-        case '5': // baixo
-            sendPelcoDFrame(C_DOWN, speed, speed);
-            Serial.println("Baixo");
-            break;
-        case '6': // zoom in
-            sendPelcoDFrame(C_ZOOMIN, speed, speed);
-            Serial.println("Zoom In");
-            break;
-        case '7': // zoom out
-            sendPelcoDFrame(C_ZOOMOUT, speed, speed);
-            Serial.println("Zoom Out");
-            break;
-        // adicione mais casos conforme necessário para outros comandos
-        default:
-            break;
-        }
-        blinkLED();
-    }
+    // Continua o loop principal
 }
