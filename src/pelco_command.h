@@ -67,7 +67,6 @@ void setPreset(byte presetID)
     sendPelcoDFrame(C_SET_PRESET, data1, data2);
     Serial.println("Set Preset");
     delay(500);
-    stopCamera();
 }
 
 void clearPreset(byte presetID)
@@ -77,7 +76,6 @@ void clearPreset(byte presetID)
     sendPelcoDFrame(C_CLEAR_PRESET, data1, data2);
     Serial.println("Clear Preset");
     delay(500);
-    stopCamera();
 }
 
 void callPreset(byte presetID)
@@ -87,7 +85,6 @@ void callPreset(byte presetID)
     sendPelcoDFrame(C_CALL_PRESET, data1, data2);
     Serial.println("Call Preset");
     delay(500);
-    stopCamera();
 }
 
 void handleDirectionalZoomCommand(uint8_t command)
@@ -151,13 +148,20 @@ void receiveEvent(int byteCount)
 
         switch (command[1])
         {
+        case 0x01: // Comandos direcionais e de zoom
+            stopCamera();
+            break;
         case 0x02: // Comandos direcionais e de zoom
             handleDirectionalZoomCommand(command[2]);
             break;
         case 0x03:                  // Call Preset
             callPreset(command[2]); // Exemplo de Preset ID = command[1]
             break;
+        case 0x04:                 // Call Preset
+            setPreset(command[2]); // Exemplo de Preset ID = command[1]
+            break;
         default:
+            stopCamera();
             break;
         }
     }
