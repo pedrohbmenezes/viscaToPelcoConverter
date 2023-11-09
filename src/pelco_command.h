@@ -7,8 +7,8 @@
 const byte rePin = 5;
 const byte LEDi = 13;
 
-const byte address = 1; // Endereço da câmera
-byte speed = 100;       // Pode ser alterada pressionando esquerda+cima ou esquerda+baixo
+const byte address = 2; // Endereço da câmera
+const byte speed = 100; // Pode ser alterada pressionando esquerda+cima ou esquerda+baixo
 
 const byte C_STOP = 0x00;
 const byte C_UP = 0x08;
@@ -23,7 +23,7 @@ const byte C_CALL_PRESET = 0x07;
 
 bool stopped = false;
 
-SoftwareSerial SerialRS(3, 4); // Pinos RX e TX para a comunicação RS485
+SoftwareSerial SerialRS(16, 17); // Pinos RX e TX para a comunicação RS485
 
 void sendPelcoDFrame(byte command, byte data1, byte data2)
 {
@@ -34,17 +34,6 @@ void sendPelcoDFrame(byte command, byte data1, byte data2)
     for (int i = 0; i < 7; i++)
     {
         SerialRS.write(bytes[i]);
-    }
-}
-
-void blinkLED()
-{
-    for (int i = 0; i < 4; i++)
-    {
-        digitalWrite(LEDi, HIGH);
-        delay(100);
-        digitalWrite(LEDi, LOW);
-        delay(100);
     }
 }
 
@@ -119,51 +108,41 @@ void handleDirectionalZoomCommand(uint8_t command)
     }
 }
 
-void receiveEvent(int byteCount)
+void receiveEvent(uint8_t *command)
 {
-    Serial.println("Recebeu comando");
 
-    while (Wire.available())
+    Serial.print("Comando recebido: ");
+    for (int i = 0; i < 3; i++)
     {
-        uint8_t command[3];
-        for (int i = 0; i < 3; i++)
-        {
-            command[i] = Wire.read();
-        }
+        Serial.print("0x");
+        Serial.print(command[i], HEX);
+        Serial.print(" ");
+    }
+    Serial.println();
 
-        Serial.print("Comando recebido: ");
-        for (int i = 0; i < 3; i++)
-        {
-            Serial.print("0x");
-            Serial.print(command[i], HEX);
-            Serial.print(" ");
-        }
-        Serial.println();
+    if (command[0] != 0xFF)
+    {
+        Serial.println("Comando inválido!");
+        return;
+    }
 
-        if (command[0] != 0xFF)
-        {
-            Serial.println("Comando inválido!");
-            continue;
-        }
-
-        switch (command[1])
-        {
-        case 0x01: // Comandos direcionais e de zoom
-            stopCamera();
-            break;
-        case 0x02: // Comandos direcionais e de zoom
-            handleDirectionalZoomCommand(command[2]);
-            break;
-        case 0x03:                  // Call Preset
-            callPreset(command[2]); // Exemplo de Preset ID = command[1]
-            break;
-        case 0x04:                 // Call Preset
-            setPreset(command[2]); // Exemplo de Preset ID = command[1]
-            break;
-        default:
-            stopCamera();
-            break;
-        }
+    switch (command[1])
+    {
+    case 0x01: // Comandos direcionais e de zoom
+        stopCamera();
+        break;
+    case 0x02: // Comandos direcionais e de zoom
+        handleDirectionalZoomCommand(command[2]);
+        break;
+    case 0x03:                  // Call Preset
+        callPreset(command[2]); // Exemplo de Preset ID = command[1]
+        break;
+    case 0x04:                 // Call Preset
+        setPreset(command[2]); // Exemplo de Preset ID = command[1]
+        break;
+    default:
+        stopCamera();
+        break;
     }
 }
 
@@ -172,22 +151,6 @@ void startRS485()
     pinMode(rePin, OUTPUT);
     digitalWrite(rePin, RS485Transmit);
     SerialRS.begin(9600);
-}
-
-void setup()
-{
-    pinMode(LEDi, OUTPUT);
-    startRS485();
-
-    Serial.begin(115200);
-    Wire.begin(8); // Inicia a comunicação I2C com o endereço da câmera
-    Wire.onReceive(receiveEvent);
-
-    delay(1000);
-    Serial.println("Controlador Pelco D");
-}
-
-void loop()
-{
-    // Continua o loop principal
+    stopCamera();
+    Serial.println("RS485 iniciado");
 }

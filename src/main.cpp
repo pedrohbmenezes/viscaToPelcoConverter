@@ -1,17 +1,18 @@
 #include <Arduino.h>
-#include <ESP8266WiFi.h>
+#include <WiFi.h>
 #include <Wire.h>
 #include <command.h>
+#include <pelco_command.h>
 
-const char *ssid = "CLARO_648DFE-IOT";
-const char *password = "TGtgnCCaGm";
+const char *ssid = "cameraPNSR1";
+const char *password = "05011920PNSR";
 
-IPAddress ip(192, 168, 1, 158);
-IPAddress gateway(192, 168, 1, 1);
+IPAddress ip(10, 0, 0, 2);
+IPAddress gateway(10, 0, 0, 1);
 IPAddress subnet(255, 255, 255, 0);
 
-WiFiServer server(80);
-const int ledPin = LED_BUILTIN;
+WiFiServer server(79);
+const int ledPin = 2;
 
 unsigned long lastDataReceivedTime = 0;
 const unsigned long DATA_TIMEOUT = 600000; // 10 minutes in milliseconds
@@ -35,26 +36,6 @@ void resetArray(char *array, int size)
   }
 }
 
-void setup()
-{
-  Serial.begin(115200);
-  Serial.setDebugOutput(true);
-  Wire.begin(D1, D2);
-  pinMode(ledPin, OUTPUT);
-  WiFi.config(ip, gateway, subnet);
-  WiFi.begin(ssid, password);
-
-  while (WiFi.status() != WL_CONNECTED)
-  {
-    delay(1000);
-  }
-
-  server.begin();
-
-  Serial.println("Servidor iniciado!");
-  blinkLed(4, 500, ledPin);
-}
-
 void processClientData(WiFiClient &client)
 {
   char received[350];
@@ -75,15 +56,10 @@ void processClientData(WiFiClient &client)
   {
     received[positions] = '\0';
     CommandVisca commandVisca;
-    const uint8_t *commandBytes = commandVisca.getCommandBytes(received);
+    uint8_t *commandBytes = commandVisca.getCommandBytes(received);
     int numBytes = 3;
 
-    Wire.beginTransmission(8);
-    for (int i = 0; i < numBytes; i++)
-    {
-      Wire.write(commandBytes[i]);
-    }
-    Wire.endTransmission();
+    receiveEvent(commandBytes);
 
     delete[] commandBytes;
     resetArray(received, sizeof(received));
@@ -91,6 +67,27 @@ void processClientData(WiFiClient &client)
     // Atualiza o tempo do último dado recebido
     lastDataReceivedTime = millis();
   }
+}
+
+void setup()
+{
+  Serial.begin(115200);
+  Serial.setDebugOutput(true);
+  pinMode(ledPin, OUTPUT);
+  WiFi.config(ip, gateway, subnet);
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    blinkLed(5, 200, ledPin);
+    Serial.println("WiFi não conectado!");
+    delay(1000);
+  }
+
+  server.begin();
+  startRS485();
+  Serial.println("Servidor iniciado!");
+  blinkLed(4, 500, ledPin);
 }
 
 void loop()
