@@ -11,7 +11,7 @@ private:
 public:
     bool isSetPresent(char *command, int presentNumber)
     {
-        char memoryPosition = presentNumber - 1; // Ajusta o número de chamada presente para a posição de memória correspondente
+        char memoryPosition = presentNumber; // Ajusta o número de chamada presente para a posição de memória correspondente
         return (checkByte(command, 0, 0x81) && checkByte(command, 1, 0x01) && checkByte(command, 2, 0x04) && checkByte(command, 3, 0x3F) && checkByte(command, 4, 0x01) && checkByte(command, 5, memoryPosition) && checkByte(command, 6, 0xFF));
     }
     bool isCallPresent(char *command, int presentNumber)
@@ -73,8 +73,15 @@ public:
 
     uint8_t *getCommandBytes(char *command)
     {
+        Serial.print("Visca Comando recebido: ");
+        for (int i = 0; i < 7; i++)
+        {
+            Serial.print("0x");
+            Serial.print(command[i], HEX);
+            Serial.print(" ");
+        }
+        Serial.println();
         uint8_t *commandBytes = new uint8_t[3];
-
         if (isSetPresent(command, command[5]))
         {
             commandBytes[0] = 0xFF;
