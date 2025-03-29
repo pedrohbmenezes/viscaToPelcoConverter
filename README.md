@@ -1,12 +1,100 @@
-Conversor de Protocolo VISCA para Pelco
-Este repositório contém o código e a documentação relacionados a um dispositivo de hardware que permite a conversão do protocolo VISCA para Pelco. O Conversor de Protocolo VISCA para Pelco é projetado para auxiliar na integração de sistemas de controle de câmera que utilizam os protocolos VISCA e Pelco em um ambiente unificado.
+# Controle de Câmera com ESP32 + Pelco-D + VISCA
 
-Visão Geral
-O Conversor de Protocolo VISCA para Pelco é uma solução flexível e eficiente que permite a comunicação transparente entre dispositivos de controle de câmera que utilizam diferentes protocolos. O dispositivo é capaz de receber comandos em VISCA (protocolo amplamente utilizado por câmeras Sony) e convertê-los para o protocolo Pelco (comumente encontrado em câmeras de outras marcas). Isso facilita a integração de sistemas de controle de câmera heterogêneos, fornecendo uma interface unificada para o controle e monitoramento de câmeras.
+Este projeto permite controlar uma câmera via protocolo **Pelco-D** com comandos **VISCA** usando um **ESP32**, com suporte a:
 
-Funcionalidades Principais
-Conversão bidirecional de comandos VISCA para Pelco.
-Suporte a uma ampla gama de comandos e funcionalidades dos protocolos VISCA e Pelco.
-Interface de comunicação flexível e configurável para integração com diferentes sistemas de controle de câmera.
-Design modular e escalável para fácil expansão e integração em diferentes configurações.
-Indicadores visuais e logs para facilitar a depuração e monitoramento do dispositivo.
+- Conexão Wi-Fi com fallback para Access Point (modo configuração)
+- Interface web para configuração de SSID, senha, IP fixo e endereço da câmera
+- Servidor TCP para receber comandos VISCA (porta 2000)
+- Transmissão de comandos via RS485 (SoftwareSerial)
+- Atualização de firmware OTA (Over The Air)
+
+---
+
+## Arquitetura do Projeto
+
+| Arquivo               | Função                                                                 |
+|-----------------------|------------------------------------------------------------------------|
+| `main.ino`            | Fluxo principal: conexão, leitura TCP, interpretação e envio de comandos |
+| `WiFiConfig.h`        | Configuração de rede (STA ou AP), interface web, armazenamento          |
+| `OTASetup.h`          | Inicializa e gerencia atualização OTA via rede Wi-Fi                     |
+| `pelco_command.h`     | Controle da câmera via protocolo Pelco-D em RS485                        |
+| `command.h`           | Interpreta comandos VISCA recebidos do cliente TCP                      |
+
+---
+
+## Como funciona
+
+### 1. Conexão Wi-Fi
+- Tenta conectar à última rede Wi-Fi salva
+- Se falhar, cria um Access Point: `CAMERA_SETUP`, senha: `12345678`
+- Interface acessível em: `http://192.168.4.1`
+
+### 2. Interface Web (modo AP)
+Permite configurar:
+- SSID e senha do Wi-Fi
+- IP fixo, gateway e subnet (opcional)
+- Endereço da câmera (1 a 255)
+
+Essas informações são salvas na flash usando `Preferences` e usadas no próximo boot.
+
+### 3. Comandos TCP
+- O ESP32 escuta na porta **2000**
+- Lê os bytes do cliente até encontrar `0xFF` (fim do comando VISCA)
+- Interpreta o comando via `command.h`
+- Converte para comando Pelco-D e envia via RS485
+
+### 4. RS485
+- Utiliza `SoftwareSerial` nos pinos **16 (RX)** e **17 (TX)**
+- Usa o pino **D5** para controle de direção (RE/DE)
+- Envia comandos no protocolo Pelco-D baseados nos comandos VISCA recebidos
+
+### 5. OTA
+- Ao conectar com sucesso na rede Wi-Fi, o ESP32 aceita atualização OTA via IDE (Arduino ou PlatformIO)
+- Nome da rede: `camera-controller.local`
+- Senha OTA: `123456`
+
+---
+
+## Fluxo resumido
+```mermaid
+graph TD
+A[Início] --> B{Wi-Fi conectado?}
+B -- Sim --> C[Inicia servidor TCP e RS485]
+C --> D[Escuta comandos VISCA via TCP]
+D --> E[Interpreta e envia via Pelco-D]
+B -- Não --> F[Cria Access Point]
+F --> G[Interface Web de Configuração]
+G --> H[Salva dados e reinicia]
+```
+
+---
+
+## Pinos utilizados no ESP32
+
+| Função        | Pino  |
+|----------------|--------|
+| RS485 TX       | 17     |
+| RS485 RX       | 16     |
+| RS485 RE/DE    | 5      |
+| LED status     | 2      |
+
+---
+
+## Como atualizar via OTA
+1. O ESP32 deve estar conectado à mesma rede Wi-Fi que o seu computador
+2. Na IDE (Arduino ou PlatformIO), selecione o dispositivo: `camera-controller.local`
+3. Compile e envie normalmente (OTA)
+
+---
+
+## Futuras melhorias sugeridas
+- [ ] Botão físico para reset das configurações
+- [ ] Rota `/status` com dados atuais (IP, SSID, endereço da câmera)
+- [ ] Interface protegida por login
+- [ ] Lista de redes Wi-Fi disponíveis na página web
+- [ ] Upload OTA via navegador (interface web)
+
+---
+
+> Desenvolvido por Pedro Henrique
+
