@@ -3,19 +3,14 @@
 #include <Wire.h>
 #include <command.h>
 #include <pelco_command.h>
-
-const char *ssid = "cameraPNSR1";
-const char *password = "05011920PNSR";
-
-IPAddress ip(10, 0, 0, 20);
-IPAddress gateway(10, 0, 0, 1);
-IPAddress subnet(255, 255, 255, 0);
+#include "WiFiConfig.h" // Importa o módulo de configuração Wi-Fi
+#include "OTASetup.h"
 
 WiFiServer server(2000);
 const int ledPin = 2;
 
 unsigned long lastDataReceivedTime = 0;
-const unsigned long DATA_TIMEOUT = 600000; // 10 minutes in milliseconds
+const unsigned long DATA_TIMEOUT = 600000; // 10 minutos
 
 void blinkLed(int n, int s, int led)
 {
@@ -57,73 +52,54 @@ void processClientData(WiFiClient &client)
     received[positions] = '\0';
     CommandVisca commandVisca;
     uint8_t *commandBytes = commandVisca.getCommandBytes(received);
-    int numBytes = 3;
 
     receiveEvent(commandBytes);
 
     delete[] commandBytes;
     resetArray(received, sizeof(received));
-
-    // Atualiza o tempo do último dado recebido
     lastDataReceivedTime = millis();
   }
 }
-void verifyConnection()
-{
-  if (WiFi.status() != WL_CONNECTED)
-  {
-    WiFi.begin(ssid, password);
-    while (WiFi.status() != WL_CONNECTED)
-    {
-      blinkLed(5, 100, ledPin);
-      Serial.println("Conectando...");
-      delay(1000);
-    }
-    Serial.println("Conectado");
-  }
-};
 
 void setup()
 {
   Serial.begin(115200);
-  Serial.setDebugOutput(true);
-  Serial.print("Configurando Camera");
-  Serial.print(address);
-  Serial.println();
   pinMode(ledPin, OUTPUT);
-  WiFi.config(ip, gateway, subnet);
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED)
-  {
-    blinkLed(5, 200, ledPin);
-    Serial.println("Conectando...");
-    delay(1000);
-  }
 
-  server.begin();
-  startRS485();
-  Serial.println("Servidor iniciado!");
-  blinkLed(4, 500, ledPin);
+  bool connected = tryConnectWiFi(); // tenta conectar ou ativa o modo AP
+
+  if (connected)
+  {
+    server.begin();
+    setupOTA();
+    startRS485();
+    setCameraAddress(getCameraAddress()); // define o endereço da câmera vindo das configs
+    Serial.print("Endereço da câmera configurado: ");
+    Serial.println(getCameraAddress());
+    Serial.println("Servidor iniciado!");
+    blinkLed(4, 500, ledPin);
+  }
 }
 
 void loop()
 {
+  if (!isWiFiInStationMode())
+  {
+    handleWebServer(); // mantém o web server do modo AP funcionando
+    return;
+  }
+
   WiFiClient client = server.available();
-  verifyConnection();
   if (client)
   {
     digitalWrite(ledPin, LOW);
     Serial.println("Cliente conectado");
-    // Atualiza o tempo do último dado recebido
     lastDataReceivedTime = millis();
 
     while (client.connected())
     {
       processClientData(client);
 
-      // verifica o estado do wifi
-      verifyConnection();
-      // Verifica se o tempo de inatividade excedeu o limite
       if (millis() - lastDataReceivedTime > DATA_TIMEOUT)
       {
         Serial.println("Tempo de inatividade excedido. Desconectando o cliente.");
@@ -135,4 +111,6 @@ void loop()
     Serial.println("Cliente desconectado");
     digitalWrite(ledPin, HIGH);
   }
+  handleOTA(); // Verifica atualizações OTA
+  delay(10);   // Pequeno atraso para evitar sobrecarga da CPU
 }

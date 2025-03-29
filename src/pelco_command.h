@@ -7,7 +7,6 @@
 const byte rePin = 5;
 const byte LEDi = 13;
 
-const byte address = 2; // Endereço da câmera
 const byte speed = 100; // Pode ser alterada pressionando esquerda+cima ou esquerda+baixo
 
 const byte C_STOP = 0x00;
@@ -22,12 +21,18 @@ const byte C_CLEAR_PRESET = 0x05;
 const byte C_CALL_PRESET = 0x07;
 
 bool stopped = false;
+byte cameraAddress = 2; // valor padrão
+
+void setCameraAddress(byte addr)
+{
+    cameraAddress = addr;
+}
 
 SoftwareSerial SerialRS(16, 17); // Pinos RX e TX para a comunicação RS485
 
 void sendPelcoDFrame(byte command, byte data1, byte data2)
 {
-    byte bytes[7] = {0xFF, address, 0x00, command, data1, data2, 0x00};
+    byte bytes[7] = {0xFF, cameraAddress, 0x00, command, data1, data2, 0x00};
     byte crc = (bytes[1] + bytes[2] + bytes[3] + bytes[4] + bytes[5]) % 0x100;
     bytes[6] = crc;
 
@@ -80,14 +85,14 @@ void handleDirectionalZoomCommand(uint8_t command)
 {
     switch (command)
     {
-    case 0x01: // Direita
-        moveCamera(C_RIGHT, "Direita");
+    case 0x01:                         // Direita
+        moveCamera(C_LEFT, "Direita"); // Comando invertido para a câmera
         break;
     case 0x02: // Pare
         stopCamera();
         break;
-    case 0x03: // Esquerda
-        moveCamera(C_LEFT, "Esquerda");
+    case 0x03:                           // Esquerda
+        moveCamera(C_RIGHT, "Esquerda"); // Comando invertido para a câmera
         break;
     case 0x04: // Cima
         moveCamera(C_UP, "Cima");
@@ -102,7 +107,6 @@ void handleDirectionalZoomCommand(uint8_t command)
         moveCamera(C_ZOOMOUT, "Zoom Out");
         break;
     default:
-        // Comando inválido
         Serial.println("Comando direcional/zoom inválido!");
         break;
     }
