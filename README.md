@@ -55,6 +55,36 @@ Essas informações são salvas na flash usando `Preferences` e usadas no próxi
 
 ---
 
+## OTA via PlatformIO
+
+### 1. Certifique-se de que:
+- O firmware atual já possui `setupOTA()` e `handleOTA()`
+- O ESP32 está conectado na **mesma rede Wi-Fi** que seu computador
+- Você conhece o **IP do ESP** ou ele responde como `camera-controller.local`
+
+### 2. Atualize seu `platformio.ini` com:
+
+```ini
+[env:esp32-ota]
+platform = espressif32
+board = esp32dev
+framework = arduino
+upload_protocol = espota
+upload_port = camera-controller.local  ; ou 10.0.0.45
+upload_flags =
+  --auth=123456
+  --port=3232
+```
+
+### 3. Use via terminal:
+```bash
+pio run -t upload -e esp32-ota
+```
+
+Ou selecione o ambiente `esp32-ota` na interface do PlatformIO e clique em Upload.
+
+---
+
 ## Fluxo resumido
 ```mermaid
 graph TD
