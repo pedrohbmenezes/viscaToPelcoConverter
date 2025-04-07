@@ -3,14 +3,16 @@
 #include <Wire.h>
 #include <command.h>
 #include <pelco_command.h>
-#include "WiFiConfig.h" // Importa o módulo de configuração Wi-Fi
+#include "WiFiConfig.h"
 #include "OTASetup.h"
+#include "mqttAws.h"
+#include "./utils/logUtil.h"
 
-WiFiServer server(2000);
+WiFiServer *serverPtr = nullptr;
 const int ledPin = 2;
-
 unsigned long lastDataReceivedTime = 0;
-const unsigned long DATA_TIMEOUT = 600000; // 10 minutos
+const unsigned long DATA_TIMEOUT = 600000;
+static unsigned long lastStatus = 0;
 
 void blinkLed(int n, int s, int led)
 {
@@ -52,12 +54,28 @@ void processClientData(WiFiClient &client)
     received[positions] = '\0';
     CommandVisca commandVisca;
     uint8_t *commandBytes = commandVisca.getCommandBytes(received);
-
     receiveEvent(commandBytes);
-
     delete[] commandBytes;
     resetArray(received, sizeof(received));
     lastDataReceivedTime = millis();
+  }
+}
+
+void handleConfigsLoop()
+{
+  handleOTA();
+  handleAwsMQTT();
+}
+
+void statusDevice()
+{
+  static unsigned long lastStatusSent = 0;
+  unsigned long now = millis();
+
+  if (now - lastStatusSent >= 10000)
+  {
+    lastStatusSent = now;
+    publishStatus(); // Envia status MQTT
   }
 }
 
@@ -65,19 +83,34 @@ void setup()
 {
   Serial.begin(115200);
   pinMode(ledPin, OUTPUT);
-
-  bool connected = tryConnectWiFi(); // tenta conectar ou ativa o modo AP
+  logMessage("Iniciando ESP32...");
+  bool connected = tryConnectWiFi();
 
   if (connected)
   {
-    server.begin();
-    setupOTA();
+    if (setupAwsMQTT())
+    {
+      logMessage("🚀 ESP32 conectado ao AWS IoT!");
+    }
+    IPAddress ip = WiFi.localIP();
+
+    // Lê porta configurada e inicia servidor
+    uint16_t tcpPort = getTcpPort();
+    serverPtr = new WiFiServer(tcpPort);
+    serverPtr->begin();
+
+    setCameraAddress(getCameraAddress());
     startRS485();
-    setCameraAddress(getCameraAddress()); // define o endereço da câmera vindo das configs
-    Serial.print("Endereço da câmera configurado: ");
-    Serial.println(getCameraAddress());
-    Serial.println("Servidor iniciado!");
+    setupOTA();
+
+    logConfig("Endereço da câmera configurado: " + String(getCameraAddress()));
+    logMessage("Servidor iniciado e ouvindo na porta " + String(tcpPort) + ".");
+
     blinkLed(4, 500, ledPin);
+  }
+  else
+  {
+    logConfig("Falha ao conectar no WiFi. Modo AP ativado.");
   }
 }
 
@@ -85,32 +118,46 @@ void loop()
 {
   if (!isWiFiInStationMode())
   {
-    handleWebServer(); // mantém o web server do modo AP funcionando
+    handleWebServer();
+    blinkAPLed();
     return;
   }
 
-  WiFiClient client = server.available();
-  if (client)
+  if (serverPtr)
   {
-    digitalWrite(ledPin, LOW);
-    Serial.println("Cliente conectado");
-    lastDataReceivedTime = millis();
-
-    while (client.connected())
+    WiFiClient client = serverPtr->available();
+    if (client)
     {
-      processClientData(client);
+      digitalWrite(ledPin, LOW);
+      logMessage("Cliente conectado");
+      lastDataReceivedTime = millis();
 
-      if (millis() - lastDataReceivedTime > DATA_TIMEOUT)
+      while (client.connected())
       {
-        Serial.println("Tempo de inatividade excedido. Desconectando o cliente.");
-        client.stop();
-        break;
-      }
-    }
+        processClientData(client);
 
-    Serial.println("Cliente desconectado");
-    digitalWrite(ledPin, HIGH);
+        if (millis() - lastDataReceivedTime > DATA_TIMEOUT)
+        {
+          logMessage("Tempo de inatividade excedido. Cliente foi desconectado.");
+          client.stop();
+          break;
+        }
+        handleConfigsLoop();
+        statusDevice();
+      }
+
+      logMessage("Cliente desconectado");
+      digitalWrite(ledPin, HIGH);
+    }
   }
-  handleOTA(); // Verifica atualizações OTA
-  delay(10);   // Pequeno atraso para evitar sobrecarga da CPU
+
+  static unsigned long lastReport = 0;
+  if (millis() - lastReport > 60000)
+  {
+    lastReport = millis();
+  }
+
+  statusDevice();
+  handleConfigsLoop();
+  delay(10);
 }

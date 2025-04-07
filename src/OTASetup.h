@@ -2,10 +2,13 @@
 #define OTA_SETUP_H
 
 #include <ArduinoOTA.h>
+#include "./envs/config.h" // ✅ onde está o DEVICE_ID definido
 
-void setupOTA(const char *hostname = "camera-controller", const char *password = "123456")
+void setupOTA(const char *baseHostname = "camera-controller", const char *password = "123456")
 {
-    ArduinoOTA.setHostname(hostname);
+    // 🧠 Hostname final com o ID do dispositivo: ex: camera-controller-cam001
+    String fullHostname = String(baseHostname) + "-" + String(DEVICE_ID);
+    ArduinoOTA.setHostname(fullHostname.c_str());
     ArduinoOTA.setPassword(password);
 
     ArduinoOTA.onStart([]()

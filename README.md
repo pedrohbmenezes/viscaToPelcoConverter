@@ -1,130 +1,181 @@
-# Controle de Câmera com ESP32 + Pelco-D + VISCA
+# 📷 Projeto: Controle de Câmera com ESP32 — Pelco-D + VISCA
 
-Este projeto permite controlar uma câmera via protocolo **Pelco-D** com comandos **VISCA** usando um **ESP32**, com suporte a:
+Este projeto transforma o ESP32 em um **controlador inteligente para câmeras PTZ (Pan-Tilt-Zoom)** que utilizam protocolo **Pelco-D**, recebendo comandos em **VISCA** via TCP/IP.
 
-- Conexão Wi-Fi com fallback para Access Point (modo configuração)
-- Interface web para configuração de SSID, senha, IP fixo e endereço da câmera
-- Servidor TCP para receber comandos VISCA (porta 2000)
-- Transmissão de comandos via RS485 (SoftwareSerial)
-- Atualização de firmware OTA (Over The Air)
+👉 Ideal para aplicações em **videomonitoramento**, **estúdios**, **salas de controle**, ou **projetos DIY de automação de câmera**.
 
 ---
 
-## Arquitetura do Projeto
+## 🧠 Visão Geral
+
+🔹 O ESP32 atua como **gateway entre comandos VISCA (via rede)** e **comandos Pelco-D (via RS485)**.  
+🔹 Conta com **interface web para configuração de rede e parâmetros da câmera**.  
+🔹 Possui **modo AP automático**, OTA, reset físico e LED indicador de status.
+
+---
+
+## 🚀 Funcionalidades Principais
+
+### 📡 1. **Conexão Wi-Fi Inteligente**
+- O ESP32 tenta conectar à rede Wi-Fi salva (modo **STA**).
+- Se falhar, **ativa automaticamente um Access Point** chamado `CAMERA_SETUP` para configuração.
+
+### 🌐 2. **Interface Web Completa** (modo AP)
+Acesse via `http://192.168.4.1` e configure:
+- ✅ SSID e senha do Wi-Fi
+- ✅ IP fixo, gateway e subnet (opcional)
+- ✅ Endereço da câmera (byte entre 1 e 255)
+- ✅ Porta TCP para recebimento dos comandos
+
+Todas as informações são salvas de forma persistente com `Preferences` na flash do ESP32.
+
+### 🎯 3. **Recebimento de Comandos VISCA por TCP**
+- Porta TCP configurável (padrão: **2000**) escutando comandos em formato VISCA
+- Ao receber um comando, ele é interpretado e convertido para Pelco-D
+
+### ↔️ 4. **Envio de Comandos Pelco-D via RS485**
+- Usa `SoftwareSerial` nos pinos 16 (RX2) e 17 (TX2)
+- Controle de direção com pino D5 (RE/DE)
+- Comandos possíveis:
+  - Movimento: cima, baixo, esquerda, direita
+  - Zoom in / Zoom out
+  - Set, call e clear de presets
+
+### ⛈️ 5. **Atualização OTA (Over-the-Air)**
+- Quando conectado à rede, o ESP aceita **upload de firmware via Wi-Fi**
+- Funciona com PlatformIO ou Arduino IDE
+- Nome do dispositivo: `camera-controller-{DEVICE_ID}.local`
+- Senha OTA: `123456`
+
+### ⏺️ 6. **Botão de Reset (GPIO0 / BOOT)**
+- Se mantido pressionado por 3 segundos durante o boot:
+  - 🪩 Apaga todas as configurações salvas (Wi-Fi, IP, câmera)
+  - ⟳ Reinicia automaticamente no modo AP
+
+### 💡 7. **LED Indicador de Status (GPIO2)**
+- Enquanto o ESP estiver em modo Access Point:
+  - O LED pisca a cada 500ms
+  - Informa que o ESP está aguardando configuração
+
+---
+
+## 🔌 Diagrama de Conexão — ESP32 ↔ RS485
+
+```
+📄 ESP32 GPIOs         ↔       Módulo RS485 (ex: MAX485)
+----------------------------------------------------------
+GPIO16 (RX2)         →       RO (Receiver Output)
+GPIO17 (TX2)         ←       DI (Driver Input)
+GPIO5  (D5)          →       RE/DE (Control)
+```
+
+---
+
+## 📂 Estrutura dos Arquivos
 
 | Arquivo               | Função                                                                 |
 |-----------------------|------------------------------------------------------------------------|
-| `main.ino`            | Fluxo principal: conexão, leitura TCP, interpretação e envio de comandos |
-| `WiFiConfig.h`        | Configuração de rede (STA ou AP), interface web, armazenamento          |
-| `OTASetup.h`          | Inicializa e gerencia atualização OTA via rede Wi-Fi                     |
-| `pelco_command.h`     | Controle da câmera via protocolo Pelco-D em RS485                        |
-| `command.h`           | Interpreta comandos VISCA recebidos do cliente TCP                      |
+| `main.cpp`            | Loop principal, conexões, entrada de comandos                          |
+| `WiFiConfig.h`        | Gerencia STA/AP, interface web, preferences e LED                      |
+| `pelco_command.h`     | Geração e envio de comandos Pelco-D via RS485                          |
+| `command.h`           | Interpretação de comandos VISCA e conversão para comandos internos     |
+| `OTASetup.h`          | Setup OTA usando `ArduinoOTA`                                          |
+| `mqttAws.h`           | Integração com AWS IoT via MQTT                                        |
+| `logUtil.h`           | Utilitários para logs locais e MQTT                                    |
+| `blynkSetup.h`        | (opcional) Integração com Blynk IoT                                    |
+| `config.h`            | Variáveis globais e defaults como DEVICE_ID, porta padrão etc.         |
 
 ---
 
-## Como funciona
+## 🧰 Pinos Utilizados no ESP32
 
-### 1. Conexão Wi-Fi
-- Tenta conectar à última rede Wi-Fi salva
-- Se falhar, cria um Access Point: `CAMERA_SETUP`, senha: `12345678`
-- Interface acessível em: `http://192.168.4.1`
-
-### 2. Interface Web (modo AP)
-Permite configurar:
-- SSID e senha do Wi-Fi
-- IP fixo, gateway e subnet (opcional)
-- Endereço da câmera (1 a 255)
-
-Essas informações são salvas na flash usando `Preferences` e usadas no próximo boot.
-
-### 3. Comandos TCP
-- O ESP32 escuta na porta **2000**
-- Lê os bytes do cliente até encontrar `0xFF` (fim do comando VISCA)
-- Interpreta o comando via `command.h`
-- Converte para comando Pelco-D e envia via RS485
-
-### 4. RS485
-- Utiliza `SoftwareSerial` nos pinos **16 (RX)** e **17 (TX)**
-- Usa o pino **D5** para controle de direção (RE/DE)
-- Envia comandos no protocolo Pelco-D baseados nos comandos VISCA recebidos
-
-### 5. OTA
-- Ao conectar com sucesso na rede Wi-Fi, o ESP32 aceita atualização OTA via IDE (Arduino ou PlatformIO)
-- Nome da rede: `camera-controller.local`
-- Senha OTA: `123456`
+| Função                   | Pino  |
+|--------------------------|--------|
+| RS485 TX                 | 17     |
+| RS485 RX                 | 16     |
+| RS485 RE/DE              | 5      |
+| LED indicador (modo AP)  | 2      |
+| Botão BOOT (reset cfg)   | 0      |
+| Botão EN (reset chip)    | EN     |
 
 ---
 
-## OTA via PlatformIO
+## 🧪 Upload OTA com PlatformIO
 
-### 1. Certifique-se de que:
-- O firmware atual já possui `setupOTA()` e `handleOTA()`
-- O ESP32 está conectado na **mesma rede Wi-Fi** que seu computador
-- Você conhece o **IP do ESP** ou ele responde como `camera-controller.local`
+### 📌 Requisitos:
+- Firmware compilado com `setupOTA()` e `handleOTA()`
+- ESP32 e seu PC conectados na mesma rede Wi-Fi
 
-### 2. Atualize seu `platformio.ini` com:
-
+### ⚙️ Exemplo no `platformio.ini`:
 ```ini
 [env:esp32-ota]
 platform = espressif32
 board = esp32dev
 framework = arduino
 upload_protocol = espota
-upload_port = camera-controller.local  ; ou 10.0.0.45
+upload_port = camera-controller-cam001.local
 upload_flags =
   --auth=123456
   --port=3232
 ```
 
-### 3. Use via terminal:
+### 🔼 Enviando via terminal:
 ```bash
 pio run -t upload -e esp32-ota
 ```
 
-Ou selecione o ambiente `esp32-ota` na interface do PlatformIO e clique em Upload.
-
 ---
 
-## Fluxo resumido
+## ⟲ Fluxo do Projeto
 ```mermaid
 graph TD
-A[Início] --> B{Wi-Fi conectado?}
-B -- Sim --> C[Inicia servidor TCP e RS485]
-C --> D[Escuta comandos VISCA via TCP]
-D --> E[Interpreta e envia via Pelco-D]
-B -- Não --> F[Cria Access Point]
-F --> G[Interface Web de Configuração]
-G --> H[Salva dados e reinicia]
+A[ESP32 inicia] --> B{Config Wi-Fi salva?}
+B -- Sim --> C{Conectou?}
+C -- Sim --> D[Inicia servidor TCP + RS485 + OTA]
+C -- Não --> E[Inicia Access Point + LED pisca]
+B -- Não --> E
+E --> F[Interface Web em http://192.168.4.1]
+F --> G[Salva configs e reinicia]
 ```
 
 ---
 
-## Pinos utilizados no ESP32
+## 📡 Diagrama do Fluxo de Conexão Wi-Fi
 
-| Função        | Pino  |
-|----------------|--------|
-| RS485 TX       | 17     |
-| RS485 RX       | 16     |
-| RS485 RE/DE    | 5      |
-| LED status     | 2      |
-
----
-
-## Como atualizar via OTA
-1. O ESP32 deve estar conectado à mesma rede Wi-Fi que o seu computador
-2. Na IDE (Arduino ou PlatformIO), selecione o dispositivo: `camera-controller.local`
-3. Compile e envie normalmente (OTA)
+```mermaid
+graph TD
+START([Início]) --> CHECK_SSID{Configuração Wi-Fi existe?}
+CHECK_SSID -- Não --> MODE_AP[Iniciar Access Point (CAMERA_SETUP)]
+CHECK_SSID -- Sim --> TRY_CONNECT[Conectar à rede Wi-Fi configurada]
+TRY_CONNECT -- Sucesso --> INIT_SERVER[Iniciar Servidor TCP e OTA]
+TRY_CONNECT -- Falha --> MODE_AP
+MODE_AP --> HOST_UI[Exibir página de configuração Wi-Fi (192.168.4.1)]
+HOST_UI --> SAVE_CONFIG[Salvar nova configuração e reiniciar]
+```
 
 ---
 
-## Futuras melhorias sugeridas
-- [ ] Botão físico para reset das configurações
-- [ ] Rota `/status` com dados atuais (IP, SSID, endereço da câmera)
-- [ ] Interface protegida por login
-- [ ] Lista de redes Wi-Fi disponíveis na página web
-- [ ] Upload OTA via navegador (interface web)
+## 🔒 Segurança
+- Configurações salvas em flash via `Preferences`
+- OTA protegido com senha `123456`
+- Reset seguro via BOOT apenas no boot
 
 ---
 
-> Desenvolvido por Pedro Henrique
+## 🧱 Futuras Melhorias
+- [ ] Upload OTA via interface web
+- [ ] Proteção da interface com login
+- [ ] Visualização de status da câmera e rede
+- [ ] Listar redes Wi-Fi disponíveis na interface
+- [ ] Interface SPIFFS com HTML/CSS customizado
+
+---
+
+## 👨‍💼 Autor
+**Pedro Henrique**  
+Desenvolvido com foco em **flexibilidade, conectividade e controle remoto de câmeras.**
+
+---
+
+🎉 **Obrigado por usar o projeto!**
 
