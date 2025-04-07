@@ -3,19 +3,16 @@
 #include <Wire.h>
 #include <command.h>
 #include <pelco_command.h>
+#include "WiFiConfig.h"
+#include "OTASetup.h"
+#include "mqttAws.h"
+#include "./utils/logUtil.h"
 
-const char *ssid = "cameraPNSR1";
-const char *password = "05011920PNSR";
-
-IPAddress ip(10, 0, 0, 20);
-IPAddress gateway(10, 0, 0, 1);
-IPAddress subnet(255, 255, 255, 0);
-
-WiFiServer server(2000);
+WiFiServer *serverPtr = nullptr;
 const int ledPin = 2;
-
 unsigned long lastDataReceivedTime = 0;
-const unsigned long DATA_TIMEOUT = 600000; // 10 minutes in milliseconds
+const unsigned long DATA_TIMEOUT = 600000;
+static unsigned long lastStatus = 0;
 
 void blinkLed(int n, int s, int led)
 {
@@ -57,82 +54,110 @@ void processClientData(WiFiClient &client)
     received[positions] = '\0';
     CommandVisca commandVisca;
     uint8_t *commandBytes = commandVisca.getCommandBytes(received);
-    int numBytes = 3;
-
     receiveEvent(commandBytes);
-
     delete[] commandBytes;
     resetArray(received, sizeof(received));
-
-    // Atualiza o tempo do último dado recebido
     lastDataReceivedTime = millis();
   }
 }
-void verifyConnection()
+
+void handleConfigsLoop()
 {
-  if (WiFi.status() != WL_CONNECTED)
+  handleOTA();
+  handleAwsMQTT();
+}
+
+void statusDevice()
+{
+  static unsigned long lastStatusSent = 0;
+  unsigned long now = millis();
+
+  if (now - lastStatusSent >= 10000)
   {
-    WiFi.begin(ssid, password);
-    while (WiFi.status() != WL_CONNECTED)
-    {
-      blinkLed(5, 100, ledPin);
-      Serial.println("Conectando...");
-      delay(1000);
-    }
-    Serial.println("Conectado");
+    lastStatusSent = now;
+    publishStatus(); // Envia status MQTT
   }
-};
+}
 
 void setup()
 {
   Serial.begin(115200);
-  Serial.setDebugOutput(true);
-  Serial.print("Configurando Camera");
-  Serial.print(address);
-  Serial.println();
   pinMode(ledPin, OUTPUT);
-  WiFi.config(ip, gateway, subnet);
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED)
-  {
-    blinkLed(5, 200, ledPin);
-    Serial.println("Conectando...");
-    delay(1000);
-  }
+  logMessage("Iniciando ESP32...");
+  bool connected = tryConnectWiFi();
 
-  server.begin();
-  startRS485();
-  Serial.println("Servidor iniciado!");
-  blinkLed(4, 500, ledPin);
+  if (connected)
+  {
+    if (setupAwsMQTT())
+    {
+      logMessage("🚀 ESP32 conectado ao AWS IoT!");
+    }
+    IPAddress ip = WiFi.localIP();
+
+    // Lê porta configurada e inicia servidor
+    uint16_t tcpPort = getTcpPort();
+    serverPtr = new WiFiServer(tcpPort);
+    serverPtr->begin();
+
+    setCameraAddress(getCameraAddress());
+    startRS485();
+    setupOTA();
+
+    logConfig("Endereço da câmera configurado: " + String(getCameraAddress()));
+    logMessage("Servidor iniciado e ouvindo na porta " + String(tcpPort) + ".");
+
+    blinkLed(4, 500, ledPin);
+  }
+  else
+  {
+    logConfig("Falha ao conectar no WiFi. Modo AP ativado.");
+  }
 }
 
 void loop()
 {
-  WiFiClient client = server.available();
-  verifyConnection();
-  if (client)
+  if (!isWiFiInStationMode())
   {
-    digitalWrite(ledPin, LOW);
-    Serial.println("Cliente conectado");
-    // Atualiza o tempo do último dado recebido
-    lastDataReceivedTime = millis();
-
-    while (client.connected())
-    {
-      processClientData(client);
-
-      // verifica o estado do wifi
-      verifyConnection();
-      // Verifica se o tempo de inatividade excedeu o limite
-      if (millis() - lastDataReceivedTime > DATA_TIMEOUT)
-      {
-        Serial.println("Tempo de inatividade excedido. Desconectando o cliente.");
-        client.stop();
-        break;
-      }
-    }
-
-    Serial.println("Cliente desconectado");
-    digitalWrite(ledPin, HIGH);
+    handleWebServer();
+    blinkAPLed();
+    return;
   }
+
+  if (serverPtr)
+  {
+    WiFiClient client = serverPtr->available();
+    if (client)
+    {
+      digitalWrite(ledPin, LOW);
+      logMessage("Cliente conectado");
+      lastDataReceivedTime = millis();
+
+      while (client.connected())
+      {
+        processClientData(client);
+
+        if (millis() - lastDataReceivedTime > DATA_TIMEOUT)
+        {
+          logMessage("Tempo de inatividade excedido. Cliente foi desconectado.");
+          client.stop();
+          break;
+        }
+        handleConfigsLoop();
+        statusDevice();
+      }
+
+      logMessage("Cliente desconectado");
+      digitalWrite(ledPin, HIGH);
+    }
+  }
+
+  static unsigned long lastReport = 0;
+  if (millis() - lastReport > 60000)
+  {
+    lastReport = millis();
+  }
+
+  statusDevice();
+  handleConfigsLoop();
+  delay(10);
 }

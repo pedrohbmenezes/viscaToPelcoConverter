@@ -1,33 +1,45 @@
+#ifndef PELCO_COMMAND_H
+#define PELCO_COMMAND_H
+
 #include <Wire.h>
 #include <Arduino.h>
 #include <SoftwareSerial.h>
+#include "./utils/logUtil.h"
+
 #define RS485Transmit HIGH
 #define RS485Receive LOW
 
 const byte rePin = 5;
 const byte LEDi = 13;
+const byte speed = 100;
 
-const byte address = 2; // Endereço da câmera
-const byte speed = 100; // Pode ser alterada pressionando esquerda+cima ou esquerda+baixo
-
-const byte C_STOP = 0x00;
-const byte C_UP = 0x08;
-const byte C_DOWN = 0x10;
-const byte C_LEFT = 0x04;
-const byte C_RIGHT = 0x02;
-const byte C_ZOOMIN = 0x20;
-const byte C_ZOOMOUT = 0x40;
-const byte C_SET_PRESET = 0x03;
-const byte C_CLEAR_PRESET = 0x05;
-const byte C_CALL_PRESET = 0x07;
+namespace PelcoCommand
+{
+    const byte Stop = 0x00;
+    const byte Up = 0x08;
+    const byte Down = 0x10;
+    const byte Left = 0x04;
+    const byte Right = 0x02;
+    const byte ZoomIn = 0x20;
+    const byte ZoomOut = 0x40;
+    const byte SetPreset = 0x03;
+    const byte ClearPreset = 0x05;
+    const byte CallPreset = 0x07;
+}
 
 bool stopped = false;
+byte cameraAddress = 2;
 
-SoftwareSerial SerialRS(16, 17); // Pinos RX e TX para a comunicação RS485
+void setCameraAddress(byte addr)
+{
+    cameraAddress = addr;
+}
+
+SoftwareSerial SerialRS(16, 17); // RX, TX
 
 void sendPelcoDFrame(byte command, byte data1, byte data2)
 {
-    byte bytes[7] = {0xFF, address, 0x00, command, data1, data2, 0x00};
+    byte bytes[7] = {0xFF, cameraAddress, 0x00, command, data1, data2, 0x00};
     byte crc = (bytes[1] + bytes[2] + bytes[3] + bytes[4] + bytes[5]) % 0x100;
     bytes[6] = crc;
 
@@ -39,109 +51,89 @@ void sendPelcoDFrame(byte command, byte data1, byte data2)
 
 void stopCamera()
 {
-    sendPelcoDFrame(C_STOP, 0x00, 0x00);
-    Serial.println("Pare");
+    sendPelcoDFrame(PelcoCommand::Stop, 0x00, 0x00);
+    logPelcoCommand("Parar movimento");
 }
 
 void moveCamera(byte command, const char *message)
 {
     sendPelcoDFrame(command, speed, speed);
-    Serial.println(message);
+    logPelcoCommand(message);
 }
 
-void setPreset(byte presetID)
+void sendPresetCommand(byte commandType, byte presetID, const char *label)
 {
-    byte data1 = 0x00;
-    byte data2 = presetID;
-    sendPelcoDFrame(C_SET_PRESET, data1, data2);
-    Serial.println("Set Preset");
+    if (presetID < 1 || presetID > 255)
+    {
+        logPelcoCommand("Preset inválido!");
+        return;
+    }
+    sendPelcoDFrame(commandType, 0x00, presetID);
+    logPelcoCommand(String(label) + " - Preset " + String(presetID));
     delay(500);
 }
 
-void clearPreset(byte presetID)
-{
-    byte data1 = 0x00;
-    byte data2 = presetID;
-    sendPelcoDFrame(C_CLEAR_PRESET, data1, data2);
-    Serial.println("Clear Preset");
-    delay(500);
-}
-
-void callPreset(byte presetID)
-{
-    byte data1 = 0x00;
-    byte data2 = presetID;
-    sendPelcoDFrame(C_CALL_PRESET, data1, data2);
-    Serial.println("Call Preset");
-    delay(500);
-}
+void setPreset(byte presetID) { sendPresetCommand(PelcoCommand::SetPreset, presetID, "Set Preset"); }
+void clearPreset(byte presetID) { sendPresetCommand(PelcoCommand::ClearPreset, presetID, "Clear Preset"); }
+void callPreset(byte presetID) { sendPresetCommand(PelcoCommand::CallPreset, presetID, "Call Preset"); }
 
 void handleDirectionalZoomCommand(uint8_t command)
 {
     switch (command)
     {
-    case 0x01: // Direita
-        moveCamera(C_RIGHT, "Direita");
+    case 0x01:
+        moveCamera(PelcoCommand::Left, "Direita");
         break;
-    case 0x02: // Pare
+    case 0x02:
         stopCamera();
         break;
-    case 0x03: // Esquerda
-        moveCamera(C_LEFT, "Esquerda");
+    case 0x03:
+        moveCamera(PelcoCommand::Right, "Esquerda");
         break;
-    case 0x04: // Cima
-        moveCamera(C_UP, "Cima");
+    case 0x04:
+        moveCamera(PelcoCommand::Up, "Cima");
         break;
-    case 0x05: // Baixo
-        moveCamera(C_DOWN, "Baixo");
+    case 0x05:
+        moveCamera(PelcoCommand::Down, "Baixo");
         break;
-    case 0x06: // Zoom In
-        moveCamera(C_ZOOMIN, "Zoom In");
+    case 0x06:
+        moveCamera(PelcoCommand::ZoomIn, "Zoom In");
         break;
-    case 0x07: // Zoom Out
-        moveCamera(C_ZOOMOUT, "Zoom Out");
+    case 0x07:
+        moveCamera(PelcoCommand::ZoomOut, "Zoom Out");
         break;
     default:
-        // Comando inválido
-        Serial.println("Comando direcional/zoom inválido!");
+        logPelcoCommand("Comando direcional/zoom inválido!");
         break;
     }
 }
 
 void receiveEvent(uint8_t *command)
 {
-
-    Serial.print("Comando recebido: ");
-    for (int i = 0; i < 3; i++)
-    {
-        Serial.print("0x");
-        Serial.print(command[i], HEX);
-        Serial.print(" ");
-    }
-    Serial.println();
-
     if (command[0] != 0xFF)
     {
-        Serial.println("Comando inválido!");
+        logPelcoCommand("Comando inválido (header diferente de 0xFF)");
         return;
     }
 
     switch (command[1])
     {
-    case 0x01: // Comandos direcionais e de zoom
+    case 0x01:
         stopCamera();
+        logPelcoCommand("Parar câmera");
         break;
-    case 0x02: // Comandos direcionais e de zoom
+    case 0x02:
         handleDirectionalZoomCommand(command[2]);
         break;
-    case 0x03:                  // Call Preset
-        callPreset(command[2]); // Exemplo de Preset ID = command[1]
+    case 0x03:
+        callPreset(command[2]);
         break;
-    case 0x04:                 // Call Preset
-        setPreset(command[2]); // Exemplo de Preset ID = command[1]
+    case 0x04:
+        setPreset(command[2]);
         break;
     default:
         stopCamera();
+        logPelcoCommand("Comando desconhecido. Parando câmera.");
         break;
     }
 }
@@ -152,5 +144,7 @@ void startRS485()
     digitalWrite(rePin, RS485Transmit);
     SerialRS.begin(9600);
     stopCamera();
-    Serial.println("RS485 iniciado");
+    logMessage("RS485 iniciado");
 }
+
+#endif
